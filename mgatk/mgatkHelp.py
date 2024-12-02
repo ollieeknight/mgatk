@@ -8,8 +8,9 @@ import subprocess
 import pysam
 import filecmp
 import math
+from typing import List, Tuple, Dict
 
-def string_hamming_distance(str1, str2):
+def string_hamming_distance(str1: str, str2: str) -> int:
 	"""
 	Fast hamming distance over 2 strings known to be of same length.
 	In information theory, the Hamming distance between two strings of equal 
@@ -17,76 +18,79 @@ def string_hamming_distance(str1, str2):
 	are different.
 	eg "karolin" and "kathrin" is 3.
 	"""
-	return sum(map(lambda x, y: x != y, str1, str2))
+	return sum(x != y for x, y in zip(str1, str2))
 
-def rev_comp(seq):
+def rev_comp(seq: str) -> str:
 	"""
-	Fast Reverse Compliment
+	Fast Reverse Complement
 	"""  
 	tbl = str.maketrans('ATCGN', 'TAGCN')
 	return seq.translate(tbl)[::-1]
 
-def gettime(): 
+def gettime() -> str: 
 	"""
 	Matches `date` in Linux
 	"""
 	return time.strftime("%a %b %d %X %Z %Y: ")
 
-def findIdx(list1, list2):
+def findIdx(list1: List, list2: List) -> List[int]:
 	"""
 	Return the indices of list1 in list2
 	"""
 	return [i for i, x in enumerate(list1) if x in list2]
 
-def check_R_packages(required_packages):
+def check_R_dependencies(required_packages: List[str]) -> None:
 	"""
 	Determines whether or not R packages are properly installed
 	"""
 	R_path = shutil.which("R")
-	installed_packages = os.popen(R_path + ''' -e "installed.packages()" | awk '{print $1}' | sort | uniq''').read().strip().split("\n")
+	if not R_path:
+		sys.exit("ERROR: R is not installed or not in PATH.")
+	
+	installed_packages = os.popen(f"{R_path} -e \"installed.packages()\" | awk '{{print $1}}' | sort | uniq").read().strip().split("\n")
 	missing_packages = set(required_packages) - set(installed_packages)
 	if missing_packages:
-		sys.exit(f"ERROR: cannot find the following R package: {missing_packages}\n"
-				 "Install it in your R console and then try rerunning mgatk (but there may be other missing dependencies).")
+		sys.exit(f"ERROR: cannot find the following R package(s): {', '.join(missing_packages)}\n"
+				 "Install them in your R console and then try rerunning mgatk (but there may be other missing dependencies).")
 
-def check_software_exists(tool):
-	tool_path = shutil.which(tool)
-	if not tool_path:
-		sys.exit(f"ERROR: cannot find {tool} in environment; add it to user PATH environment")
+def check_software_dependencies(tools: List[str]) -> None:
+	"""
+	Determines whether or not required software tools are properly installed
+	"""
+	for tool in tools:
+		if not shutil.which(tool):
+			sys.exit(f"ERROR: cannot find {tool} in environment; add it to user PATH environment")
 
-def check_pip_packages(required_packages):
-    """
-    Determines whether or not pip packages are properly installed.
-    Supports version checking with syntax package==version
-    """
-    import pkg_resources
-    missing_packages = []
-    
-    for package in required_packages:
-        if "==" in package:
-            # Handle versioned packages
-            name, version = package.split("==")
-            try:
-                installed_version = pkg_resources.get_distribution(name).version
-                if installed_version != version:
-                    missing_packages.append(f"{name} (requires version {version}, found {installed_version})")
-            except pkg_resources.DistributionNotFound:
-                missing_packages.append(package)
-        else:
-            # Handle packages without version requirements
-            try:
-                __import__(package)
-            except ImportError:
-                missing_packages.append(package)
-    
-    if missing_packages:
-        sys.exit(f"ERROR: cannot find the following pip packages: {', '.join(missing_packages)}\n"
-                "Install them using pip and then try rerunning the script.")
+def check_pip_dependencies(required_packages: List[str]) -> None:
+	"""
+	Determines whether or not pip packages are properly installed.
+	Supports version checking with syntax package==version
+	"""
+	import pkg_resources
+	missing_packages = []
+	
+	for package in required_packages:
+		if "==" in package:
+			# Handle versioned packages
+			name, version = package.split("==")
+			try:
+				installed_version = pkg_resources.get_distribution(name).version
+				if installed_version != version:
+					missing_packages.append(f"{name} (requires version {version}, found {installed_version})")
+			except pkg_resources.DistributionNotFound:
+				missing_packages.append(package)
+		else:
+			# Handle packages without version requirements
+			try:
+				__import__(package)
+			except ImportError:
+				missing_packages.append(package)
+	
+	if missing_packages:
+		sys.exit(f"ERROR: cannot find the following pip package(s): {', '.join(missing_packages)}\n"
+				 "Install them using pip and then try rerunning the script.")
 
-# Example usage:
-# check_pip_packages(['matplotlib', 'pulp==2.7.0'])
-
-def parse_fasta(filename):
+def parse_fasta(filename: str) -> Dict[str, str]:
 	"""
 	Imports specified .fasta file
 	"""
@@ -100,7 +104,7 @@ def parse_fasta(filename):
 				sequences[name] += line.strip()
 	return sequences
 
-def verify_bai(bamfile):
+def verify_bai(bamfile: str) -> None:
 	"""
 	Function that indexes bam file from input if missing
 	"""
@@ -108,12 +112,12 @@ def verify_bai(bamfile):
 	if not os.path.exists(bai_file):
 		pysam.index(bamfile)
 
-def split_chunk_file(one_barcode_file, script_dir, input, bcbd, barcode_tag, mito_chr, umi_barcode):
+def split_chunk_file(one_barcode_file: str, script_dir: str, input: str, bcbd: str, barcode_tag: str, mito_chr: str, umi_barcode: str) -> None:
 	chunk_bam_py = os.path.join(script_dir, "bin/python/chunk_barcoded_bam.py")
 	pycall = ['python', chunk_bam_py, input, bcbd, barcode_tag, one_barcode_file, mito_chr, umi_barcode]
 	subprocess.run(pycall, check=True)
 
-def verify_sample_mitobam(bam, mito_chr, mito_length):
+def verify_sample_mitobam(bam: str, mito_chr: str, mito_length: int) -> bool:
 	idxs = pysam.idxstats(bam).split("\n")
 	nReads = 0
 	bam_length = 0
@@ -125,7 +129,7 @@ def verify_sample_mitobam(bam, mito_chr, mito_length):
 		mito_length = bam_length
 	return bam_length == mito_length and nReads > 0
 
-def handle_fasta_inference(mito_genome, supported_genomes, script_dir, mode, of, write_files=True):
+def handle_fasta_inference(mito_genome: str, supported_genomes: List[str], script_dir: str, mode: str, of: str, write_files: bool = True) -> Tuple[str, str, int]:
 	"""
 	Determines what's going on with the mitochondrial genome
 	based on user input / existing data
@@ -160,17 +164,17 @@ def handle_fasta_inference(mito_genome, supported_genomes, script_dir, mode, of,
 				f.write(f"{b}\t{base}\n")
 	return fastaf, mito_genome, mito_length
 
-def make_folder(folder):
+def make_folder(folder: str) -> None:
 	"""
 	Function to only make a given folder if it does not already exist
 	"""
 	os.makedirs(folder, exist_ok=True)
 
-def file_len(fname):
+def file_len(fname: str) -> int:
 	with open(fname) as f:
 		return sum(1 for _ in f)
 
-def split_barcodes_file(barcode_file, nsamples, output):
+def split_barcodes_file(barcode_file: str, nsamples: int, output: str) -> List[str]:
 	"""
 	Function to split barcode file into smaller files if needed
 	"""

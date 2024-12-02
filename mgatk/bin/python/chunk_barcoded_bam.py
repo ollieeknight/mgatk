@@ -1,80 +1,62 @@
 #!/usr/bin/python
 
 import sys
-import re
 import pysam
 import os
-from collections import Counter
 
-bamfile = sys.argv[1]
-outfolder = sys.argv[2]
-barcodeTag = sys.argv[3]
-bcfile = sys.argv[4]
-mtchr = sys.argv[5]
-umitag = sys.argv[6]
+# Get command line arguments
+bamfile, outfolder, barcodeTag, bcfile, mtchr, umitag = sys.argv[1:7]
 
-base=os.path.basename(bamfile)
-basename=os.path.basename(os.path.splitext(bcfile)[0])
+# Extract base names
+base = os.path.basename(bamfile)
+basename = os.path.basename(os.path.splitext(bcfile)[0])
 
 def getBarcode(read, tag_get):
 	'''
 	Parse out the barcode per-read
 	'''
-	# for tg in read.tags:
-	# 	if(tag_get == tg[0]):
-	# 		return(tg[1])
-	# return("AA")
-	# Using get_tag to get the results
 	try:
 		return read.get_tag(tag_get)
-	except Exception as e:
-		return ("AA")
-
+	except Exception:
+		return "AA"
 
 # Read in the barcodes
 with open(bcfile) as barcode_file_handle:
-    content = barcode_file_handle.readlines()
-bc = set([x.strip() for x in content]) # from list to set, so query becomes O(1)
+	bc = set(line.strip() for line in barcode_file_handle)  # from list to set, so query becomes O(1)
 
+# Open BAM file for reading and create output BAM file
 bam = pysam.AlignmentFile(bamfile, "rb")
-outname = outfolder + "/" + basename + ".bam"
-out = pysam.AlignmentFile(outname, "wb", template = bam)
+outname = os.path.join(outfolder, f"{basename}.bam")
+out = pysam.AlignmentFile(outname, "wb", template=bam)
 
-# Make a DNA inspired additional barcode to account for potentially different sample indices
+# Generate a list of faux UMIs
 bases = "ACGT"
 fauxdon = [a + b + c + d for a in bases for b in bases for c in bases for d in bases]
 
-# Filter for reads that match the set of possible barcodes for this sample
+# Filter reads that match the set of possible barcodes for this sample
 try:
-	Itr = bam.fetch(str(mtchr),multiple_iterators=False)
-	for read in Itr:
+	for read in bam.fetch(mtchr, multiple_iterators=False):
 		barcode_id = getBarcode(read, barcodeTag)
 		
-		if(barcode_id in bc):
-		
-			# Now check for true UMI
-			if(umitag != "XX"): 
-				umi_id = getBarcode(read, umitag)
-			else:
-				umi_id = ""
+		if barcode_id in bc:
+			# Check for true UMI
+			umi_id = getBarcode(read, umitag) if umitag != "XX" else ""
 			
-			# Make a fake UMI from 1) cell barcode + 2) captured umi + 3) experiment
-			# all with just ACGTs so that picard doesn't bark at us. 
-			# Only do this if the last string element is a number (i.e channel in 10x convention)
-			if(barcode_id[-1].isnumeric()):
+			# Create a fake UMI
+			if barcode_id[-1].isnumeric():
 				split_two = barcode_id.split("-")
-				faux_umi = split_two[0] + umi_id + fauxdon[(int(split_two[1]) - 1)]
+				faux_umi = split_two[0] + umi_id + fauxdon[int(split_two[1]) - 1]
 			else:
-				faux_umi = barcode_id + umi_id 
+				faux_umi = barcode_id + umi_id
+			
+			# Add the fake UMI to the read tags
 			read.tags = read.tags + [("MU", faux_umi)]
 			out.write(read)
-			
 
-except OSError: # Truncated bam file from previous iteration handle
+except OSError:
 	print('Finished parsing bam')
-	
+
+# Close BAM files and create index for the output BAM
 bam.close()
 out.close()
-
 pysam.index(outname)
-

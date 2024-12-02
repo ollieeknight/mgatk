@@ -14,7 +14,7 @@ dependencies = [
     'optparse-pretty', 
     'regex', 
     'ruamel.yaml',
-    'pulp==2.7.0',  # Add pulp with specific version
+    'pulp<=2.7.0',  # Add pulp with specific version constraint
     'matplotlib'    # Add matplotlib
 ]
 
