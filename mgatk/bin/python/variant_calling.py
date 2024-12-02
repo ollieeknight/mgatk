@@ -13,36 +13,33 @@ import pandas as pd
 import matplotlib
 from matplotlib import pyplot as plt
 
-
 def load_mgatk_output(output_dir, mito_length):
-	# assuming mgatk output naming convention
-	base_files = [glob.glob(output_dir + '*.{}.txt.gz'.format(nt))[0] for nt in 'ATCG']
-	
-	base_coverage_dict = dict()
-	for i, nt in enumerate('ATCG'):
-		cur_base_data = pd.read_csv(gzip.open(base_files[i]), header=None)
-		
-		# gather coverage for forward strand
-		fwd_base_df = cur_base_data[[0, 1, 2]].pivot_table(index=1, columns=0)
-		fwd_base_df.columns = [x[1] for x in fwd_base_df.columns.values]  # flatten weird multiindex after pivot
-		fwd_base_df.index.name = None
-		missing_pos = [x for x in range(1, mito_length+1) if x not in fwd_base_df.columns]
-		fwd_base_df[missing_pos] = 0  # fill in missing positions
-		fwd_base_df = fwd_base_df.fillna(0).sort_index(axis=1)  # assume all nan are true zeroes
-		
-		# gather coverage for forward strand
-		rev_base_df = cur_base_data[[0, 1, 3]].pivot_table(index=1, columns=0)
-		rev_base_df.columns = [x[1] for x in rev_base_df.columns.values]
-		rev_base_df.index.name = None
-		missing_pos = [x for x in range(1, mito_length+1) if x not in rev_base_df.columns]
-		rev_base_df[missing_pos] = 0
-		rev_base_df = rev_base_df.fillna(0).sort_index(axis=1)
-		
-		# organize base data into a dict
-		base_coverage_dict[nt] = (fwd_base_df, rev_base_df)
-	
-	return base_coverage_dict
-
+    base_files = [glob.glob(output_dir + '*.{}.txt.gz'.format(nt))[0] for nt in 'ATCG']
+    
+    base_coverage_dict = dict()
+    for i, nt in enumerate('ATCG'):
+        cur_base_data = pd.read_csv(gzip.open(base_files[i]), header=None)
+        
+        positions = range(1, mito_length+1)
+        
+        # Process forward strand
+        fwd_pivot = cur_base_data[[0, 1, 2]].pivot_table(index=1, columns=0)
+        fwd_pivot.columns = [x[1] for x in fwd_pivot.columns.values]
+        
+        # Process reverse strand
+        rev_pivot = cur_base_data[[0, 1, 3]].pivot_table(index=1, columns=0)
+        rev_pivot.columns = [x[1] for x in rev_pivot.columns.values]
+        
+        # Create complete DataFrames at once
+        fwd_base_df = pd.DataFrame(0, index=fwd_pivot.index, columns=positions)
+        rev_base_df = pd.DataFrame(0, index=rev_pivot.index, columns=positions)
+        
+        fwd_base_df.update(fwd_pivot)
+        rev_base_df.update(rev_pivot)
+        
+        base_coverage_dict[nt] = (fwd_base_df, rev_base_df)
+    
+    return base_coverage_dict
 
 def gather_possible_variants(base_coverage_dict, reference_file):
 	# sum across cells and strands for each base and position
@@ -156,7 +153,7 @@ variant_output.columns = ['position', 'nucleotide', 'variant', 'vmr', 'mean', 'v
                           'n_cells_over_10', 'n_cells_over_20', 'n_cells_over_95',
                           'max_heteroplasmy', 'strand_correlation', 'mean_coverage']
 variant_output[['vmr', 'mean', 'variance', 'strand_correlation', 'mean_coverage', 'max_heteroplasmy']] = variant_output[['vmr', 'mean', 'variance', 'strand_correlation',
-                                                                                                                         'mean_coverage', 'max_heteroplasmy']].astype(np.float)
+                                                                                                                         'mean_coverage', 'max_heteroplasmy']].astype(np.float64)
 
 # exclude variants with less than three cells
 multi_cell_variants = variant_output[variant_output['n_cells_conf_detected'] >= 3]['variant']

@@ -1,11 +1,9 @@
 #!/usr/bin/python
 
 import sys
-import re
+import sys
 import pysam
 import os
-from collections import Counter
-from contextlib import contextmanager
 
 bamfile = sys.argv[1]
 outfolder = sys.argv[2]

@@ -1,10 +1,8 @@
 #!/usr/bin/python
 
 import sys
-import re
 import pysam
 import os
-from collections import Counter
 from contextlib import contextmanager
 
 bamfile = sys.argv[1]
@@ -39,7 +37,7 @@ def writePassingReads(bc_dict, mtchr):
 		if read_barcode in bc_dict:
 			idx = bc_dict[read_barcode]
 			file = fopen[idx]
-			file.write(read)
+			file = fopen[idx]
 
 # Read in the barcodes
 with open(bcfile) as barcode_file_handle:
@@ -48,22 +46,21 @@ bc = [x.strip() for x in content]
 
 # Open up a bunch of files and write out reads for valid barcodes
 @contextmanager
-def multi_file_manager(files, mode='rt'):
+@contextmanager
+def multi_file_manager(files):
 	"""
 	Open multiple files and make sure they all get closed.
 	"""
 	temp = pysam.AlignmentFile(bamfile, "rb")
-	files = [pysam.AlignmentFile(file, "wb", template = temp) for file in files]
+	files = [pysam.AlignmentFile(file, "wb", template=temp) for file in files]
 	temp.close()
-	yield files
-	for file in files:
-		file.close()
-		
+	try:
+		yield files
+	finally:
+		for file in files:
+			file.close()
 # Final loop to write out passing reads
 bambcfiles = [outfolder + "/" + bc1 + ".bam" for bc1 in bc]
 bc_dict = {bc1: i  for i,bc1 in enumerate(bc)}
 with multi_file_manager(bambcfiles) as fopen:
 	writePassingReads(bc_dict, mtchr)
-
-
-

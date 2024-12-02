@@ -1,15 +1,18 @@
 language: python
-sudo: required
-dist: trusty
+dist: focal
 
 python:
-  - "nightly"
+  - "3.7"
+  - "3.8"
+  - "3.9"
 
 before_install:
+  - sudo apt-get update
   - sudo apt-get install default-jre r-base-dev -y
 
 install:
-  - python setup.py install
+  - pip install -e .
+  - pip install pytest
 
-script: 
-  - cd tests && echo $PATH
+script:
+  - pytest tests/

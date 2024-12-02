@@ -5,8 +5,6 @@
 ###################################################
 
 import sys
-import re
-import os
 import pysam
 
 bamfile = sys.argv[1]

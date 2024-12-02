@@ -1,7 +1,3 @@
-<p align="left">
-  <img src="media/logo.png" width="50%"/>
-</p>
-
 [![Build Status](https://app.travis-ci.com/caleblareau/mgatk.svg?branch=master)](https://app.travis-ci.com/caleblareau/mgatk)
 [![PyPI version](https://badge.fury.io/py/mgatk.svg)](https://pypi.python.org/pypi/mgatk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -27,4 +23,3 @@ information and user guides.
 The **mgatk** package was developed and is maintained by [Caleb Lareau](https://profiles.stanford.edu/caleb-lareau).
 
 <br><br>
-

@@ -5,8 +5,6 @@
 ###################################################
 
 import sys
-import re
-import os
 import pysam
 import numpy as np
 from collections import defaultdict
@@ -167,7 +165,3 @@ with open(out_file_coverage,"w") as file_handle_cov:
 			
 			# Now write the depth
 			file_handle_depth.write(cell_name+"\t"+str(depth)+"\n")
-
-
-
-

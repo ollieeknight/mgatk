@@ -129,5 +129,3 @@ writeSparseMatrixN(sums1, sums2, ratio, countsA1, countsC1, countsG1, countsT1, 
 pysam.sort("-o", new_bam_name, "temp_" + new_bam_name)
 pysam.index(new_bam_name)
 os.remove("temp_" + new_bam_name)
-
-

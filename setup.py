@@ -3,7 +3,20 @@ mgatk: a mitochondrial genome analysis toolkit
 """
 from setuptools import find_packages, setup
 
-dependencies = ['click', 'pysam', 'pytest', 'snakemake', 'biopython', 'numpy', 'pandas', 'optparse-pretty', 'regex', 'ruamel.yaml']
+dependencies = [
+    'click', 
+    'pysam', 
+    'pytest', 
+    'snakemake', 
+    'biopython', 
+    'numpy', 
+    'pandas', 
+    'optparse-pretty', 
+    'regex', 
+    'ruamel.yaml',
+    'pulp==2.7.0',  # Add pulp with specific version
+    'matplotlib'    # Add matplotlib
+]
 
 setup(
     name='mgatk',
@@ -27,14 +40,7 @@ setup(
         ],
     },
     classifiers=[
-        # As from http://pypi.python.org/pypi?%3Aaction=list_classifiers
-        # 'Development Status :: 1 - Planning',
-        # 'Development Status :: 2 - Pre-Alpha',
-        # 'Development Status :: 3 - Alpha',
-        # 'Development Status :: 4 - Beta',
-         'Development Status :: 5 - Production/Stable',
-        # 'Development Status :: 6 - Mature',
-        # 'Development Status :: 7 - Inactive',
+        'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',

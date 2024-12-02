@@ -10,6 +10,7 @@ import time
 import pysam
 import math
 import glob
+import logging
 
 from pkg_resources import get_distribution
 from subprocess import call, check_call
@@ -19,146 +20,154 @@ from itertools import repeat
 from ruamel.yaml.scalarstring import SingleQuotedScalarString as sqs
 from multiprocessing import Pool
 
+# Setup logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 @click.command()
 @click.version_option()
 @click.argument('mode', type=click.Choice(['bcall', 'call', 'tenx', 'check', 'support', 'remove-background']))
-@click.option('--input', '-i', default = ".", required=True, help='Input; either directory of singular .bam file; see documentation. REQUIRED.')
+@click.option('--input', '-i', default=".", required=True, help='Input; either directory of singular .bam file; see documentation. REQUIRED.')
 @click.option('--output', '-o', default="mgatk_out", help='Output directory for analysis required for `call` and `bcall`. Default = mgatk_out')
-@click.option('--name', '-n', default="mgatk",  help='Prefix for project name. Default = mgatk')
-
-@click.option('--mito-genome', '-g', default = "rCRS", required=True, help='mitochondrial genome configuration. Choose hg19, hg38, mm10, (etc.) or a custom .fasta file; see documentation. Default = rCRS.')
-@click.option('--ncores', '-c', default = "detect", help='Number of cores to run the main job in parallel.')
-
-@click.option('--cluster', default = "",  help='Message to send to Snakemake to execute jobs on cluster interface; see documentation.')
-@click.option('--jobs', default = "0",  help='Max number of jobs to be running concurrently on the cluster interface.')
-
-@click.option('--barcode-tag', '-bt', default = "X",  help='Read tag (generally two letters) to separate single cells; valid and required only in `bcall` mode.')
-@click.option('--barcodes', '-b', default = "",  help='File path to barcodes that will be extracted; useful only in `bcall` mode. If none supplied, mgatk will learn abundant barcodes from the bam file (threshold defined by the -mb tag).')
-@click.option('--min-barcode-reads', '-mb', default = 1000,  help='Minimum number of mitochondrial reads for a barcode to be genotyped; useful only in `bcall` mode; will not overwrite the `--barcodes` logic. Default = 1000.')
-
-@click.option('--NHmax', default = 1, help='Maximum number of read alignments allowed as governed by the NH flag. Default = 1.')
-@click.option('--NMmax', default = 4, help='Maximum number of paired mismatches allowed represented by the NM/nM tags. Default = 4.')
-
-@click.option('--keep-duplicates', '-kd', is_flag=True, help='Retained dupliate (presumably PCR) reads')
-@click.option('--umi-barcode', '-ub', default = "",  help='Read tag (generally two letters) to specify the UMI tag when removing duplicates for genotyping.')
-
+@click.option('--name', '-n', default="mgatk", help='Prefix for project name. Default = mgatk')
+@click.option('--mito-genome', '-g', default="rCRS", required=True, help='Mitochondrial genome configuration. Choose hg19, hg38, mm10, (etc.) or a custom .fasta file; see documentation. Default = rCRS.')
+@click.option('--ncores', '-c', default=1, help='Number of cores to run the main job in parallel.')
+@click.option('--barcode-tag', '-bt', default="X", help='Read tag (generally two letters) to separate single cells; valid and required only in `bcall` mode.')
+@click.option('--barcodes', '-b', default="", help='File path to barcodes that will be extracted; useful only in `bcall` mode. If none supplied, mgatk will learn abundant barcodes from the bam file (threshold defined by the -mb tag).')
+@click.option('--min-barcode-reads', '-mb', default=1000, help='Minimum number of mitochondrial reads for a barcode to be genotyped; useful only in `bcall` mode; will not overwrite the `--barcodes` logic. Default = 1000.')
+@click.option('--NHmax', default=1, help='Maximum number of read alignments allowed as governed by the NH flag. Default = 1.')
+@click.option('--NMmax', default=4, help='Maximum number of paired mismatches allowed represented by the NM/nM tags. Default = 4.')
+@click.option('--remove-duplicates', '-rd', is_flag=True, help='Remove duplicate (presumably PCR) reads')
+@click.option('--umi-barcode', '-ub', default="", help='Read tag (generally two letters) to specify the UMI tag when removing duplicates for genotyping.')
 @click.option('--handle-overlap', '-ho', is_flag=True, help='Only count each base in the overlap region between a pair of reads once')
 @click.option('--low-coverage-threshold', '-lc', default=10, help='Variant count for each cell will be ignored below this when calculating VMR')
-
-@click.option('--max-javamem', '-jm', default = "8000m", help='Maximum memory for java for running duplicate removal per core. Default = 8000m.')
-
+@click.option('--max-javamem', '-jm', default="8000m", help='Maximum memory for java for running duplicate removal per core. Default = 8000m.')
 @click.option('--proper-pairs', '-pp', is_flag=True, help='Require reads to be properly paired.')
-
-@click.option('--base-qual', '-q', default = 0, help='Minimum base quality for inclusion in the genotype count. Default = 0.')
-@click.option('--alignment-quality', '-aq', default = 0, help='Minimum alignment quality to include read in genotype. Default = 0.')
+@click.option('--base-qual', '-q', default=0, help='Minimum base quality for inclusion in the genotype count. Default = 0.')
+@click.option('--alignment-quality', '-aq', default=0, help='Minimum alignment quality to include read in genotype. Default = 0.')
 @click.option('--emit-base-qualities', '-eb', is_flag=True, help='Output mean base quality per alt allele as part of the final output.')
-
-@click.option('--nsamples', '-ns', default = 7000, help='The number of samples / cells to be processed per iteration; Default = 7000. Supply 0 to try all.')
-
+@click.option('--nsamples', '-ns', default=7000, help='The number of samples / cells to be processed per iteration; Default = 7000. Supply 0 to try all.')
 @click.option('--keep-samples', '-k', default="ALL", help='Comma separated list of sample names to keep; ALL (special string) by default. Sample refers to basename of .bam file')
 @click.option('--ignore-samples', '-x', default="NONE", help='Comma separated list of sample names to ignore; NONE (special string) by default. Sample refers to basename of .bam file')
-
 @click.option('--keep-temp-files', '-z', is_flag=True, help='Add this flag to keep all intermediate files.')
 @click.option('--keep-qc-bams', '-qc', is_flag=True, help='Add this flag to keep the quality-controlled bams after processing.')
-
-@click.option('--skip-R', '-sr', is_flag=True, help='Generate plain-text only output. Otherwise, this generates a .rds obejct that can be immediately read into R for downstream analysis.')
-@click.option('--snake-stdout', '-so', is_flag=True, help='Write snakemake log to sdout rather than a file. May be necessary for certain HPC environments.')
-
-@click.option('--ncells_fg', '-nfg', default = 1000,  help='number of "foreground" cells to use for CellBender. Default = 1000.')
-@click.option('--ncells_bg', '-nbg', default = 20000,  help='number of "background" cells to use for CellBender. Default = 20000.')
+@click.option('--skip-R', '-sr', is_flag=True, help='Generate plain-text only output. Otherwise, this generates a .rds object that can be immediately read into R for downstream analysis.')
+@click.option('--snake-stdout', '-so', is_flag=True, help='Write snakemake log to stdout rather than a file. May be necessary for certain HPC environments.')
 
 def main(mode, input, output, name, mito_genome, ncores,
-	cluster, jobs, barcode_tag, barcodes, min_barcode_reads,
-	nhmax, nmmax, keep_duplicates, umi_barcode, handle_overlap, low_coverage_threshold,
+	barcode_tag, barcodes, min_barcode_reads,
+	nhmax, nmmax, remove_duplicates, umi_barcode, handle_overlap, low_coverage_threshold,
 	max_javamem, proper_pairs, base_qual, alignment_quality, emit_base_qualities,
 	nsamples, keep_samples, ignore_samples,
-	     keep_temp_files, keep_qc_bams, skip_r, snake_stdout, ncells_fg, ncells_bg):
+	     keep_temp_files, keep_qc_bams, skip_r, snake_stdout):
 	
 	"""
 	mgatk: a mitochondrial genome analysis toolkit. \n
-	MODE = ['bcall', 'call', 'tenx', 'check', 'support', 'remove-background'] \n
+	MODE = ['bcall', 'call', 'tenx'] \n
 	See https://github.com/caleblareau/mgatk/wiki for more details.
 	"""
 	
 	script_dir = os.path.dirname(os.path.realpath(__file__))
 	cwd = os.getcwd()
 	__version__ = get_distribution('mgatk').version
-	click.echo(gettime() + "mgatk v%s" % __version__)
-	
-	# Determine cores
-	if(ncores == "detect"):
-		ncores = str(available_cpu_count())
-	else:
-		ncores = str(ncores)
-	
-	# Now removing duplicates is the default, so recode variable names
-	if(keep_duplicates):
-		remove_duplicates = False
-	else:
-		remove_duplicates = True
+	logger.info("mgatk version %s" % __version__)
 	
 	# Verify dependencies	
 	if remove_duplicates:
 		check_software_exists("java")
 	
-	if (mode == "call" or mode == "tenx" or mode == "bcall") and not skip_r:
+	if (mode in ["call", "tenx", "bcall"]) and not skip_r:
 		check_software_exists("R")
 		check_R_packages(["data.table", "SummarizedExperiment", "GenomicRanges", "Matrix"])
-	elif (mode=='remove-background'):
-		check_software_exists("R")
-		check_R_packages(["data.table", "SummarizedExperiment", "GenomicRanges", "Matrix", "optparse", "dplyr", "tidyr", "hdf5r"])
+		check_pip_packages(['matplotlib', 'pulp==2.7.0'])
+
+
+	ncores = ncores if isinstance(ncores, int) else int(ncores)
 	
 	# Determine which genomes are available
 	rawsg = glob.glob(script_dir + "/bin/anno/fasta/*.fasta")
 	supported_genomes = [x.replace(script_dir + "/bin/anno/fasta/", "").replace(".fasta", "") for x in rawsg]  
-	
-	if(mode == "support"):
-		click.echo(gettime() + "List of built-in genomes supported in mgatk:")
-		click.echo(gettime() + str(supported_genomes))
-		sys.exit(gettime() + 'Specify one of these genomes or provide your own .fasta file with the --mito-genome flag')
 		
-	if(mode == "check"):
-		click.echo(gettime() + "checking dependencies...")
-	
-	# Remember that I started off as bcall as this will become overwritten
-	wasbcall = False
-	continue_check = True
-	if(mode == "bcall" or mode == "tenx" or mode == "check"):
-	
-		if(barcode_tag == "X"):
+	if mode in ["bcall", "tenx", "check"]:
+		if barcode_tag == "X":
+			logger.error('In `'+mode+'` mode, must specify a valid read tag ID (generally two letters).')
 			sys.exit('ERROR: in `'+mode+'` mode, must specify a valid read tag ID (generally two letters).')
 			
 		# Input argument is assumed to be a .bam file
 		filename, file_extension = os.path.splitext(input)
-		if(file_extension != ".bam"):
+		if file_extension != ".bam":
+			logger.error('In `'+mode+'` mode, the input should be an individual .bam file.')
 			sys.exit('ERROR: in `'+mode+'` mode, the input should be an individual .bam file.')
 		if not os.path.exists(input):
+			logger.error('No file found called "' + input + '"; please specify a valid .bam file.')
 			sys.exit('ERROR: No file found called "' + input + '"; please specify a valid .bam file.')
 		if not os.path.exists(input + ".bai"):
-			click.echo(gettime() + "Attempting to index: " + input)
+			logger.info("Attempting to index: " + input)
 			pysam.index(input)
 			
 			if not os.path.exists(input + ".bai"):
+				logger.error('Index your input .bam file for `bcall` mode.')
 				sys.exit('ERROR: index your input .bam file for `bcall` mode.')
-		click.echo(gettime() + "Found bam file: " + input + " for genotyping.")
 		
 		# Determine whether or not we have been supplied barcodes
 		barcode_known = False
-		if (os.path.exists(barcodes)) and (barcodes != ""):
-			click.echo(gettime() + "Found file of barcodes to be parsed: " + barcodes)
+		if os.path.exists(barcodes) and barcodes != "":
 			barcode_known = True
 		else:
-			if(mode == "tenx"):
+			if mode == "tenx":
+				logger.error('Must specify a known barcode list with `tenx` mode')
 				sys.exit(gettime() + 'Must specify a known barcode list with `tenx` mode')
-			click.echo(gettime() + "Will determine barcodes with at least: " + str(min_barcode_reads) + " mitochondrial reads.")
-			
+			logger.info("Will determine barcodes with at least: " + str(min_barcode_reads) + " mitochondrial reads.")
+
+	# Log the configuration details as a table
+	config_details = [
+		("Mode", mode),
+		("Input", input),
+		("Output", output),
+		("Name", name),
+		("Mitochondrial Genome", mito_genome),
+		("Number of Cores", ncores),
+		("Barcode Tag", barcode_tag),
+		("Barcodes", barcodes),
+		("Min Barcode Reads", min_barcode_reads),
+		("NHmax", nhmax),
+		("NMmax", nmmax),
+		("Remove duplicates", remove_duplicates),
+		("UMI Barcode", umi_barcode),
+		("Handle Overlap", handle_overlap),
+		("Low Coverage Threshold", low_coverage_threshold),
+		("Max Java Memory", max_javamem),
+		("Proper Pairs", proper_pairs),
+		("Base Quality", base_qual),
+		("Alignment Quality", alignment_quality),
+		("Emit Base Qualities", emit_base_qualities),
+		("Number of Samples", nsamples),
+		("Keep Samples", keep_samples),
+		("Ignore Samples", ignore_samples),
+		("Keep Temp Files", keep_temp_files),
+		("Keep QC Bams", keep_qc_bams),
+		("Skip R", skip_r),
+		("Snake Stdout", snake_stdout)
+	]
+
+	logger.info("Configuration for analysis:")
+	for key, value in config_details:
+		logger.info(f"{key:25}: {value}")
+		
+	# Remember that I started off as bcall as this will become overwritten
+	wasbcall = False
+	continue_check = True
+	if mode in ["bcall", "tenx", "check"]:
+					
 		# Make temporary directory of inputs
 		of = output; tf = of + "/temp"; bcbd = tf + "/barcoded_bams" # bcdb = barcoded bam directory
 		folders = [of, tf, bcbd, of + "/final"]
 		mkfolderout = [make_folder(x) for x in folders]
+		# logger.info("Created necessary folders for processing: " + str(folders))
 		
 		# Handle fasta requirements
 		fastaf, mito_chr, mito_length = handle_fasta_inference(mito_genome, supported_genomes, script_dir, mode, of)
+		logger.info(f"Using fasta file: {fastaf}")
 		idxs = pysam.idxstats(input).split("\n")
 		
 		# Handle common mtDNA reference genome errors
@@ -168,16 +177,16 @@ def main(mode, input, output, name, mito_genome, ncores,
 				bam_length = int(i.split("\t")[1])
 		
 		if(mito_length == bam_length):
-			click.echo(gettime() + "User specified mitochondrial genome matches .bam file")
+			pass
+		#	logger.info("User specified mitochondrial genome matches .bam file")
 		elif(bam_length == 16569):
-			click.echo(gettime() + "User specified mitochondrial genome does NOT match .bam file; using rCRS instead (length == 16569)")
+		#	logger.info("User specified mitochondrial genome does NOT match .bam file; using rCRS instead (length == 16569)")
 			fastaf, mito_chr, mito_length = handle_fasta_inference("rCRS", supported_genomes, script_dir, mode, of)
 		elif(bam_length == 16571):
-			click.echo(gettime() + "User specified mitochondrial genome does NOT match .bam file; using hg19 instead (length == 16571)")
+		#	logger.info("User specified mitochondrial genome does NOT match .bam file; using hg19 instead (length == 16571)")
 			fastaf, mito_chr, mito_length = handle_fasta_inference("hg19", supported_genomes, script_dir, mode, of)
 		else:
-			click.echo(gettime() + "User specified mitochondrial genome does NOT match .bam file; correctly specify reference genome or .fasta file")
-			quit()
+			sys.exit("User specified mitochondrial genome does NOT match .bam file; correctly specify reference genome or .fasta file")
 		
 		# Actually call the external script based on user input
 		if(not barcode_known):
@@ -186,117 +195,49 @@ def main(mode, input, output, name, mito_genome, ncores,
 			find_barcodes_py = script_dir + "/bin/python/find_barcodes.py"
 			
 			pycall = " ".join(['python', find_barcodes_py, input, bcbd, barcode_tag, str(min_barcode_reads), mito_chr, barc_quant_file, passing_barcode_file])
+			logger.info(f"Running barcode finding script: {pycall}")
 			os.system(pycall)
 			barcodes = passing_barcode_file
-
-		# Potentially split the valid barcodes into smaller files if we need to
-		if(mode == "bcall"):
-			barcode_files = split_barcodes_file(barcodes, nsamples, output)
-			split_barcoded_bam_py = script_dir + "/bin/python/split_barcoded_bam.py"
-			
-			# Loop over the split sample files
-			for i in range(len(barcode_files)):
-				one_barcode_file = barcode_files[i]
-				pycall = " ".join(['python', split_barcoded_bam_py, input, bcbd, barcode_tag, one_barcode_file, mito_chr])
-				os.system(pycall)
-				
-			# Update everything to appear like we've just set `call` on the set of bams
-			mode = "call"
-			input = bcbd 
-			wasbcall = True
+			logger.info(f"Generated barcode files: {barc_quant_file}, {passing_barcode_file}")
 		
-		#
+		# logger.info("Finished processing barcodes for genotyping.")
 		if(mode == "check" or mode == "tenx"):
-			barcode_files = split_barcodes_file(barcodes, math.ceil(file_len(barcodes)/int(ncores)), output)
+			barcode_files = split_barcodes_file(barcodes, math.ceil(file_len(barcodes)/ncores), output)
+		#	logger.info(f"Split barcodes into files for check/tenx mode: {barcode_files}")
 			samples = [os.path.basename(os.path.splitext(sample)[0]) for sample in barcode_files] 
 			samplebams = [of + "/temp/barcoded_bams/" + sample + ".bam" for sample in samples]
+		#	logger.info(f"Sample BAM files: {samplebams}")
 			
 			if(umi_barcode == ""):
 				umi_barcode = "XX"
 			
 			# Enact the split in a parallel manner if necessary
 			if(mode == "tenx"):
-				pool = Pool(processes=int(ncores))
+				pool = Pool(processes=ncores)
 				pmblah = pool.starmap(split_chunk_file, zip(barcode_files, repeat(script_dir), repeat(input), repeat(bcbd), repeat(barcode_tag), repeat(mito_chr), repeat(umi_barcode)))
 				pool.close()
+			#	logger.info("Completed parallel processing for tenx mode.")
 				
 			umi_barcode = "MU"
 			continue_check = False
 		
-	
-		click.echo(gettime() + "Finished determining/splitting barcodes for genotyping.")
+		# logger.info("Finished determining/splitting barcodes for genotyping.")
+
+		# List the split BAM files and files created in the previous steps
+		# logger.info("Listing split BAM files and files created in the previous steps:")
+		# split_bam_files = glob.glob(bcbd + "/*.bam")
+		# for bam_file in split_bam_files:
+		#	logger.info(f"Split BAM file: {bam_file}")
 		
+		# created_files = glob.glob(of + "/final/*")
+		# for created_file in created_files:
+		#	logger.info(f"Created file: {created_file}")
+			
 	# -------------------------------
 	# Determine samples for analysis
 	# -------------------------------
-	if((mode == "check" or mode == "call") and continue_check):
-	
-		bams = []
-		bams = glob.glob(input + '/*.bam')
 
-		if bams[0] == '':
-			sys.exit('ERROR: Could not import any samples from the user specification; check flags, logs and input configuration; QUITTING')
-	
-		samples = []
-		samplebams = []
-		
-		if(not wasbcall):
-			fastaf, mito_chr, mito_length = handle_fasta_inference(mito_genome, supported_genomes, script_dir, mode, output, write_files = False)
-		
-		# Loop over bam files
-		for bam in bams:
-			base=os.path.basename(bam)
-			basename=os.path.splitext(base)[0]
-			samples.append(basename)
-			samplebams.append(bam)
-			
-		# parallel process to ensure we have .bai files for each bam
-		pool = Pool(processes=int(ncores))
-		pm = pool.map(verify_bai, samplebams)
-		pool.close()
-		
-		samples_fail = []
-		for i in range(len(samples)):
-			sample = samples[i]
-			bam = samplebams[i]
-			if( not verify_sample_mitobam(bam, mito_chr, mito_length)):
-				samples_fail.append(sample)
-				
-		if(keep_samples != "ALL"):
-			keeplist = keep_samples.split(",")
-			click.echo(gettime() + "Intersecting detected samples with user-retained ones: " + keep_samples)
-			keepidx = findIdx(samples, keeplist)
-			samples = [samples[i] for i in keepidx]
-			samplebams = [samplebams[i] for i in keepidx]
-		
-		if(ignore_samples != "NONE"):
-			iglist = ignore_samples.split(",")
-			click.echo(gettime() + "Will remove samples from processing:" + ignore_samples)
-			rmidx = findIdx(samples, iglist)
-			for index in sorted(rmidx, reverse=True):
-				del samples[index]
-				del samplebams[index]
-				
-		if(len(samples_fail) > 0):
-			click.echo(gettime() + "NOTE: the samples below either have 0 mtDNA reads at the specified chromosome or are mapped to an incorrectly specified reference mitochondrial genome")
-			click.echo(gettime() + "Will remove samples from processing:" )
-			rmidx = findIdx(samples, samples_fail)
-			for index in sorted(rmidx, reverse=True):
-				print("REMOVED: ", samples[index])
-				del samples[index]
-				del samplebams[index]
-			
-		if not len(samples) > 0:
-			sys.exit('ERROR: Could not import any samples from the user specification. \nERROR: check flags, logs, and input configuration (including reference mitochondrial genome); \nQUITTING')
-	
-		nsamplesNote = "mgatk will process " + str(len(samples)) + " samples"
-		
-	if(mode == "check"):
-		# Exit gracefully
-		sys.exit(gettime() + "mgatk check passed!")
-			
-
-	if(mode == "call" or mode == "tenx"):
+	if(mode == "tenx"):
 	
 		# Make all of the output folders if necessary
 		of = output; tf = of + "/temp"; qc = of + "/qc"; logs = of + "/logs"
@@ -306,42 +247,44 @@ def main(mode, input, output, name, mito_genome, ncores,
 			 qc, qc + "/quality", qc + "/depth"]
 
 		mkfolderout = [make_folder(x) for x in folders]
+		# logger.info("Created necessary folders for processing: " + str(folders))
 		
 		#-------------------
 		# Handle .fasta file
-		#-------------------
-		if((mode == "call" and wasbcall == False)):
-			fastaf, mito_genmito_chrome, mito_length = handle_fasta_inference(mito_genome, supported_genomes, script_dir, mode, of)
-			print(gettime() + "Found designated mitochondrial chromosome: %s" % mito_chr)
-			
-		if(mode == "call" or mode == "tenx"):
+		#-------------------			
+		if(mode == "tenx"):
 			# Logging		
 			logf = open(output + "/logs" + "/base.mgatk.log", 'a')
-			click.echo(gettime() + "Starting analysis with mgatk", logf)
+		#	logger.info("Starting analysis with mgatk")
 			
 			if(mode == "call"):
-				click.echo(gettime() + nsamplesNote, logf)
+				logger.info(nsamplesNote)
 
 		if (remove_duplicates):
-				make_folder(of + "/logs/rmdupslogs")
+			make_folder(of + "/logs/rmdupslogs")
+		#	logger.info("Created folder for remove duplicates logs")
 	
 		# Create internal README files 
 		if not os.path.exists(of + "/.internal/README"):
 			with open(of + "/.internal/README" , 'w') as outfile:
 				outfile.write("This folder creates important (small) intermediate; don't modify it.\n\n")
+		#	logger.info("Created .internal/README file")
 		if not os.path.exists(of + "/.internal/parseltongue/README"):	
 			with open(of + "/.internal/parseltongue/README" , 'w') as outfile:
 				outfile.write("This folder creates intermediate output to be interpreted by Snakemake; don't modify it.\n\n")
+		#	logger.info("Created .internal/parseltongue/README file")
 		if not os.path.exists(of + "/.internal/samples/README"):
 			with open(of + "/.internal" + "/samples" + "/README" , 'w') as outfile:
 				outfile.write("This folder creates samples to be interpreted by Snakemake; don't modify it.\n\n")
+		#	logger.info("Created .internal/samples/README file")
 	
 		# Set up sample bam plain text file
 		for i in range(len(samples)):
 			with open(of + "/.internal/samples/" + samples[i] + ".bam.txt" , 'w') as outfile:
 				outfile.write(samplebams[i])
+		#	logger.info(f"Created sample bam text file: {of + '/.internal/samples/' + samples[i] + '.bam.txt'}")
 		
-		click.echo(gettime() + "Genotyping samples with "+ncores+" threads")
+		# logger.info(f"Genotyping samples with {ncores} threads")
 		
 		# add sqs to get .yaml to play friendly https://stackoverflow.com/questions/39262556/preserve-quotes-and-also-add-data-with-quotes-in-ruamel
 		dict1 = {'input_directory' : sqs(input), 'output_directory' : sqs(output), 'script_dir' : sqs(script_dir),
@@ -350,147 +293,73 @@ def main(mode, input, output, name, mito_genome, ncores,
 			'low_coverage_threshold' : sqs(low_coverage_threshold), 'barcode_tag' : sqs(barcode_tag), 'umi_barcode' : sqs(umi_barcode),
 			'alignment_quality' : sqs(alignment_quality), 'emit_base_qualities' : sqs(emit_base_qualities),
 			'proper_paired' : sqs(proper_pairs), 'NHmax' : sqs(nhmax), 'NMmax' : sqs(nmmax), 'max_javamem' : sqs(max_javamem)}
-		
-		# Potentially submit jobs to cluster
-		snakeclust = ""
-		njobs = int(jobs)
-		if(njobs > 0 and cluster != ""):
-			snakeclust = " --jobs " + jobs + " --cluster '" + cluster + "' "
-			click.echo(gettime() + "Recognized flags to process jobs on a computing cluster.", logf)
-			
-		click.echo(gettime() + "Processing samples with "+ncores+" threads", logf)
-		
+				
 		y_s = of + "/.internal/parseltongue/snake.scatter.yaml"
 		with open(y_s, 'w') as yaml_file:
 			yaml=YAML()
 			yaml.default_flow_style = False
 			yaml.dump(dict1, yaml_file)
+		# logger.info(f"Created YAML configuration file: {y_s}")
 		
 		cp_call = "cp " + y_s +  " " + logs + "/" + name + ".parameters.txt"
 		os.system(cp_call)
-	
-		if(mode == "call"):
-			
-			# Execute snakemake
-			snake_log = logs + "/" + name + ".snakemake_scatter.log"
-			
-			snake_log_out = ""
-			if not snake_stdout:
-				snake_log_out = ' &>' + snake_log
-				
-			snakecmd_scatter = 'snakemake'+snakeclust+' --snakefile ' + script_dir + '/bin/snake/Snakefile.Scatter --cores '+ncores+' --config cfp="'  + y_s + '"' + snake_log_out
-			os.system(snakecmd_scatter)
-			
-		elif(mode == "tenx"):
-			
+		# logger.info(f"Copied YAML configuration to parameters file: {logs + '/' + name + '.parameters.txt'}")
+
+		# Confirm with user to proceed
+		# click.confirm(click.style('Proceed to genotyping?\n', fg='yellow'), abort=True)
+
+		if(mode == "tenx"):
+			import subprocess
+
 			# Execute snakemake
 			snake_log = logs + "/" + name + ".snakemake_tenx.log"
-			
+
 			snake_log_out = ""
 			if not snake_stdout:
-				snake_log_out = ' &>' + snake_log
-				
-			snakecmd_tenx = 'snakemake'+snakeclust+' --snakefile ' + script_dir + '/bin/snake/Snakefile.tenx --cores '+ncores+' --config cfp="'  + y_s + '"'+ snake_log_out
-			os.system(snakecmd_tenx)
-		
-		click.echo(gettime() + "mgatk successfully processed the supplied .bam files", logf)
+				snake_log_out = f' > {snake_log} 2>&1'
 
-	
+			snakecmd_tenx = f'snakemake --snakefile {script_dir}/bin/snake/Snakefile.tenx --cores {ncores} --config cfp="{y_s}" {snake_log_out}'
+
+			# Log the Snakemake command with f-strings
+			logger.info(f"Executing Snakemake command: {snakecmd_tenx}")
+
+			# Execute the Snakemake command and capture output and errors
+			try:
+				result = subprocess.run(snakecmd_tenx, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			#	logger.info(f"Snakemake output: {result.stdout.decode('utf-8')}")
+			#	logger.info(f"Snakemake errors: {result.stderr.decode('utf-8')}")
+			except subprocess.CalledProcessError as e:
+				logger.info(f"Snakemake failed with error: {str(e)}")
+				logger.info(f"Snakemake output: {e.stdout.decode('utf-8')}")
+				logger.info(f"{gettime()}Snakemake errors: {e.stderr.decode('utf-8')}")
+				sys.exit(1)
+
 	#-------
 	# Gather
 	#-------
-	if(mode == "call"):
-		
-		mgatk_directory = output
-		dict2 = {'mgatk_directory' : sqs(mgatk_directory), 'name' : sqs(name),
-			'script_dir' : sqs(script_dir)}
-		y_g = mgatk_directory + "/.internal/parseltongue/snake.gather.yaml"
-		with open(y_g, 'w') as yaml_file:
-			yaml=YAML()
-			yaml.default_flow_style = False
-			yaml.dump(dict2, yaml_file)
-		
-		# Snakemake gather
-		snake_log = logs + "/" + name + ".snakemake_gather.log"
-		
-		snake_log_out = ""
-		if not snake_stdout:
-			snake_log_out = ' &>' + snake_log 
-			
-		snakecmd_gather = 'snakemake --snakefile ' + script_dir + '/bin/snake/Snakefile.Gather --cores 1 --config cfp="' + y_g + '"' + snake_log_out
-		os.system(snakecmd_gather)
-	
-	if(mode == "call" or mode == "tenx"):
+
+	if(mode == "tenx"):
 
 		# Make .rds file from the output
 		Rcall = "Rscript " + script_dir + "/bin/R/toRDS.R " + output + "/final " + name
 		os.system(Rcall)
-		click.echo(gettime() + "Successfully created final output files", logf)
-
-	if(mode == "remove-background"):
-			
-		of = output
-		check_software_exists("cellbender")
-		check_software_exists("Rscript")
-		
-		logf = open(output + "/logs" + "/bg.mgatk.log", 'a')
-		# prepare mgatk output for CellBender
-		# check that software exists
-		
-		cellbender_input_dir = output + "/cellbender_input"
-		make_folder(cellbender_input_dir)
-		# call prepare_cellbender.R to convert mgatk output to cellbender input for variable positions (specify cutoffs on --n_cells_conf_detected, --strand_correlation and --vmr as well?)"
-		Rcall = "Rscript " + script_dir + "/bin/R/prepare_cellbender.R -i " + output + "/final -o " + cellbender_input_dir
-		os.system(Rcall)
-		#print(Rcall)
-		click.echo(gettime() + "Prepared input for CellBender", logf)
-
-		# run CellBender
-		# check that software exists
-		
-		cellbender_output_dir = output + "/cellbender_output"
-		make_folder(cellbender_output_dir)
-		
-        # pass other arguments to cellbender?
-		cellbender_cmd = "cellbender remove-background --input " + output + "/cellbender_input --output " + output + "/cellbender_output/" + name + ".h5 --expected-cells " + str(ncells_fg) + " --total-droplets-included " + str(ncells_bg) + " --fpr 0.01 --epochs 100 --low-count-threshold 1"
-		os.system(cellbender_cmd)
-		#print(cellbender_cmd)
-		click.echo(gettime() + "Finished CellBender run", logf)
-
-		# convert CellBender output (here we could restrict the output to good cells only with the --cells argument, expects the barcodes.tsv file)
-		Rcall = "Rscript " + script_dir + "/bin/R/convert_cellbender_output.R -i " + output + "/final -c " + output + "/cellbender_output/" + name + ".h5 -o " + output + "/final/" + name + "_filtered.rds"
-		os.system(Rcall)
-		#print(Rcall)
-		click.echo(gettime() + "Converted CellBender output", logf)
-
-		if keep_temp_files:
-			click.echo(gettime() + "Temporary files not deleted since --keep-temp-files was specified.", logf)
-		else:
-			shutil.rmtree(of + "/cellbender_input")
-			shutil.rmtree(of + "/cellbender_output")
-			click.echo(gettime() + "Intermediate files successfully removed.", logf)
-	
-		# Suspend logging
-		logf.close()
+		logger.info("Successfully created final output files")
 
 	#--------
 	# Cleanup
 	#--------
-	if(mode == "call" or mode == "tenx"):
+	if(mode == "tenx"):
 		if keep_qc_bams:
-			click.echo(gettime() + "Final bams retained since --keep-qc-bams was specified.", logf)
-			dest = shutil.move(of + "/temp/ready_bam", of + "/qc_bam")	
+			logger.info("Final bams retained since --keep-qc-bams was specified.")
+			dest = shutil.move(of + "/temp/ready_bam", of + "/qc_bam")    
 
 		if keep_temp_files:
-			click.echo(gettime() + "Temporary files not deleted since --keep-temp-files was specified.", logf)
+			logger.info("Temporary files not deleted since --keep-temp-files was specified.")
 		else:
 			shutil.rmtree(of+ "/fasta")
 			shutil.rmtree(of + "/.internal")
 			shutil.rmtree(of + "/temp")
-			click.echo(gettime() + "Intermediate files successfully removed.", logf)
-		
+		#	logger.info("Intermediate files successfully removed.")
+
 		# Suspend logging
 		logf.close()
-
-	
-	
