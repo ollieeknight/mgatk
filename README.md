@@ -41,7 +41,42 @@ pip install .
 ```sh
 git clone https://github.com/ollieeknight/mgatk
 cd mgatk/tests/
+
 mgatk tenx -i barcode/test_barcode.bam -n bc1 -o bc1dmem -bt CB -b barcode/test_barcodes.txt -c 2
+
+2024-12-03 11:08:47,969 - INFO - mgatk version 1.0.0
+2024-12-03 11:08:48,307 - INFO - Configuration for analysis:
+2024-12-03 11:08:48,307 - INFO - Mode                      : tenx
+2024-12-03 11:08:48,307 - INFO - Input                     : barcode/test_barcode.bam
+2024-12-03 11:08:48,307 - INFO - Output                    : bc1dmem
+2024-12-03 11:08:48,307 - INFO - Name                      : bc1
+2024-12-03 11:08:48,307 - INFO - Mitochondrial genome      : rCRS
+2024-12-03 11:08:48,307 - INFO - Number of cores           : 2
+2024-12-03 11:08:48,307 - INFO - Barcode tag               : CB
+2024-12-03 11:08:48,308 - INFO - Barcodes                  : barcode/test_barcodes.txt
+2024-12-03 11:08:48,308 - INFO - Min barcode reads         : 1000
+2024-12-03 11:08:48,308 - INFO - NHmax                     : 1
+2024-12-03 11:08:48,308 - INFO - NMmax                     : 4
+2024-12-03 11:08:48,308 - INFO - Remove duplicates         : False
+2024-12-03 11:08:48,308 - INFO - UMI barcode               : XX
+2024-12-03 11:08:48,308 - INFO - Handle overlap            : False
+2024-12-03 11:08:48,308 - INFO - Low coverage threshold    : 10
+2024-12-03 11:08:48,308 - INFO - Max java memory           : 8000m
+2024-12-03 11:08:48,308 - INFO - Proper pairs              : False
+2024-12-03 11:08:48,308 - INFO - Base quality              : 0
+2024-12-03 11:08:48,308 - INFO - Alignment quality         : 0
+2024-12-03 11:08:48,308 - INFO - Emit base qualities       : False
+2024-12-03 11:08:48,308 - INFO - Number of samples         : 0
+2024-12-03 11:08:48,308 - INFO - Keep samples              : ALL
+2024-12-03 11:08:48,308 - INFO - Ignore samples            : NONE
+2024-12-03 11:08:48,308 - INFO - Keep temp files           : False
+2024-12-03 11:08:48,308 - INFO - Keep QC .bam files        : False
+2024-12-03 11:08:48,308 - INFO - Skip R                    : False
+2024-12-03 11:08:48,308 - INFO - Snake stdout              : False
+2024-12-03 11:08:48,308 - INFO - Remove .snakemake         : False
+2024-12-03 11:08:48,330 - INFO - Using fasta file: bc1dmem/fasta/chrM.fasta
+2024-12-03 11:08:50,618 - INFO - Executing Snakemake command: snakemake --snakefile /home/olive/bin/mgatk/mgatk/bin/snake/Snakefile.tenx --cores 2 --config cfp="bc1dmem/.internal/parseltongue/snake.scatter.yaml" > bc1dmem/logs/snakemake.log 2>&1
+2024-12-03 11:09:22,163 - INFO - Successfully created final output files. Analysis complete.
 ```
 
 ### Options

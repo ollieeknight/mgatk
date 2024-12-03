@@ -220,7 +220,7 @@ def main(mode, input, output, name, mito_genome, ncores, barcode_tag, barcodes, 
 
 	# Execute Snakemake command
 	snake_log = logs + "/snakemake.log"
-	snake_log_out = "" if snake_stdout else f' > {snake_log} 2>&1'
+	snake_log_out = "" if snake_stdout else f'> {snake_log} 2>&1'
 	snakecmd_tenx = f'snakemake --snakefile {script_dir}/bin/snake/Snakefile.tenx --cores {ncores} --config cfp="{y_s}" {snake_log_out}'
 
 	logger.info(f"Executing Snakemake command: {snakecmd_tenx}")
