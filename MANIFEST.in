@@ -3,7 +3,6 @@ prune mgatk.egg-info/
 prune tests/
 prune *.DS_Store
 
-
 # Scripts
 recursive-include mgatk *
 

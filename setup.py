@@ -14,18 +14,18 @@ dependencies = [
     'optparse-pretty', 
     'regex', 
     'ruamel.yaml',
-    'pulp<=2.7.0',  # Add pulp with specific version constraint
-    'matplotlib'    # Add matplotlib
+    'pulp<=2.7.0',
+    'matplotlib'
 ]
 
 setup(
     name='mgatk',
-    version='0.7.0',
-    url='https://github.com/caleblareau/mgatk',
+    version='1.0.0',
+    url='https://github.com/ollieeknight/mgatk',
     license='MIT',
-    author='Caleb Lareau',
-    author_email='caleb.lareau@gmail.com',
-    description='Mitochondrial genome analysis toolkit.',
+    author='Oliver Knight',
+    author_email='oliver.knight@charite.de',
+    description='Mitochondrial genome analysis toolkit lite',
     long_description=__doc__,
     packages=find_packages(exclude=['tests']),
     include_package_data=True,
@@ -34,9 +34,7 @@ setup(
     install_requires=dependencies,
     entry_points={
         'console_scripts': [
-            'mgatk = mgatk.cli:main',
-            'mgatk-del-find = mgatk.deletioncalling.clifind:main',
-            'mgatk-del = mgatk.deletioncalling.clidel:main'
+            'mgatk = mgatk.cli:main'
         ],
     },
     classifiers=[

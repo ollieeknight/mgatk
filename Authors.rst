@@ -12,6 +12,7 @@ Code Contributors
 * Vincent Liu
 * Jeffrey Verboon
 * Kopal Garg
+* Oliver Knight <oliver.knight@charite.de>
 
 Discussants 
 ------------
